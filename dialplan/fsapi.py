@@ -20,7 +20,7 @@ class DialplanHandler(Handler):
     """ Abstract dialplan handler. """
 
     def get_dialplan(self, request, context):
-        """ Return a template/context. """
+        """ Return rendered dialplan. """
         raise NotImplementedError
 
 
@@ -32,8 +32,8 @@ class DialplanSectionHandler(FsapiHandler):
             section='dialplan',
         )
 
-    def process(self, request):
-        """ Process request by dialplan context. """
+    def get_document(self, request):
+        """ Return dialplan document. """
         context = request.POST.get('Caller-Context')
         if not context:
             raise Http404

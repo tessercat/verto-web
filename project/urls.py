@@ -12,7 +12,6 @@ handler404 = custom404
 
 urlpatterns = [
     path('', include('django_prometheus.urls')),
-    path('', include('intercom.urls')),
     path('fsapi', include('fsapi.urls')),
     path('admin/', admin.site.urls),
 ]

@@ -1,15 +1,16 @@
 """ Sofia app config request handler module. """
 from django.conf import settings
 from django.shortcuts import get_object_or_404
-from configuration.fsapi import ModConfigHandler, register_mod_handler
-from sofia.models import Intercom, Gateway
+from configuration.fsapi import ModuleConfigHandler, register_config_handler
+from intercom.models import Intercom
+from sofia.models import Gateway
 
 
-class SofiaConfigHandler(ModConfigHandler):
+class SofiaConfigHandler(ModuleConfigHandler):
     """ Sofia profile config request handler. """
 
     def get_config(self, request):
-        """ Return template/context to configure mod_sofia. """
+        """ Return rendered config. """
         # self.logger.info(request.POST.dict())
         domain = request.POST.get('profile')
         if domain:
@@ -26,8 +27,7 @@ class SofiaConfigHandler(ModConfigHandler):
                     'gateway': gateway,
                     'hostname': settings.PBX_HOSTNAME
                 }
-            # self.log_rendered(request, template, context)
-            return template, context
+            return self.rendered(request, template, context)
 
         # No profile specified in POST. Return all profiles.
         template = 'sofia/sofia.conf.xml'
@@ -35,8 +35,7 @@ class SofiaConfigHandler(ModConfigHandler):
             'intercoms': Intercom.objects.all(),
             'gateways': Gateway.objects.all()
         }
-        # self.log_rendered(request, template, context)
-        return template, context
+        return self.rendered(request, template, context)
 
 
-register_mod_handler('sofia', SofiaConfigHandler())
+register_config_handler('sofia', SofiaConfigHandler())

@@ -10,7 +10,7 @@ asgiref==3.4.1
     # via
     #   daphne
     #   django
-astroid==2.6.6
+astroid==2.7.3
     # via pylint
 attrs==21.2.0
     # via
@@ -25,16 +25,18 @@ certifi==2021.5.30
     # via httpx
 cffi==1.14.6
     # via cryptography
+charset-normalizer==2.0.4
+    # via httpx
 constantly==15.1.0
     # via twisted
-cryptography==3.4.7
+cryptography==3.4.8
     # via
     #   autobahn
     #   pyopenssl
     #   service-identity
 daphne==3.0.2
     # via -r requirements.in
-django==3.2.6
+django==3.2.7
     # via -r requirements.in
 django-prometheus==2.1.0
     # via -r requirements.in
@@ -44,7 +46,7 @@ h11==0.12.0
     # via httpcore
 httpcore==0.13.6
     # via httpx
-httpx==0.18.2
+httpx==0.19.0
     # via -r requirements.in
 hyperlink==21.0.0
     # via
@@ -56,7 +58,7 @@ idna==3.2
     #   hyperlink
     #   rfc3986
     #   twisted
-importlib-metadata==4.6.4
+importlib-metadata==4.8.1
     # via
     #   flake8
     #   markdown
@@ -72,6 +74,8 @@ mccabe==0.6.1
     # via
     #   flake8
     #   pylint
+platformdirs==2.3.0
+    # via pylint
 prometheus-client==0.11.0
     # via django-prometheus
 pyasn1==0.4.8
@@ -86,7 +90,7 @@ pycparser==2.20
     # via cffi
 pyflakes==2.3.1
     # via flake8
-pylint==2.9.6
+pylint==2.10.2
     # via
     #   -r requirements.in
     #   pylint-django
@@ -123,7 +127,7 @@ txaio==21.2.1
     # via autobahn
 typed-ast==1.4.3
     # via astroid
-typing-extensions==3.10.0.0
+typing-extensions==3.10.0.2
     # via
     #   anyio
     #   asgiref

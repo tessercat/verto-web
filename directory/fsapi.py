@@ -19,7 +19,7 @@ class DirectoryHandler(Handler):
     """ Directory handler abstract class. """
 
     def get_directory(self, request, domain):
-        """ Return template/context. """
+        """ Return rendered directory. """
         raise NotImplementedError
 
 
@@ -31,8 +31,8 @@ class DirectorySectionHandler(FsapiHandler):
             section='directory',
         )
 
-    def process(self, request):
-        """ Process request by directory domain. """
+    def get_document(self, request):
+        """ Return directory document. """
         domain = request.POST.get('key_value')
         if not domain:
             raise Http404

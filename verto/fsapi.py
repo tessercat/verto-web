@@ -15,7 +15,7 @@ class VertoLoginHandler(FsapiHandler):
             action='verto_client_login',
         )
 
-    def process(self, request):
+    def get_document(self, request):
         """ Process verto client login events and return "punt" on error.
         If the login is OK, set the Client object's connected timestamp.
 
@@ -38,11 +38,11 @@ class VertoLoginHandler(FsapiHandler):
                 'Session ID mismatch for client %s %s expected %s.',
                 client, request.POST['session_id'], client.session_id
             )
-            return template, {'response': 'punt'}
+            return self.rendered(request, template, {'response': 'punt'})
         # Punt if channel is full.
         client.connected = timezone.now()
         client.save()
-        return template, {'response': 'ok'}
+        return self.rendered(request, template, {'response': 'ok'})
 
 
 class VertoDisconnectHandler(FsapiHandler):
@@ -53,7 +53,7 @@ class VertoDisconnectHandler(FsapiHandler):
             action='verto_client_disconnect',
         )
 
-    def process(self, request):
+    def get_document(self, request):
         """ Process verto client disconnect events and return "ok". If a
         client for the login username (client_id) is found, unset the
         client's connected timestamp. """
@@ -66,7 +66,7 @@ class VertoDisconnectHandler(FsapiHandler):
         client = get_object_or_404(Client, client_id=client_id)
         client.connected = None
         client.save()
-        return template, {'response': 'ok'}
+        return self.rendered(request, template, {'response': 'ok'})
 
 
 register_fsapi_handler(VertoLoginHandler())

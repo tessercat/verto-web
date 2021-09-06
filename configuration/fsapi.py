@@ -7,7 +7,7 @@ from fsapi.views import Handler, FsapiHandler, register_fsapi_handler
 module_config_handlers = {}
 
 
-def register_mod_handler(module, handler):
+def register_config_handler(module, handler):
     """ Add a module configuration handler to the registry."""
     module_config_handlers[module] = handler
     logging.getLogger('django.server').info(
@@ -16,11 +16,11 @@ def register_mod_handler(module, handler):
     )
 
 
-class ModConfigHandler(Handler):
+class ModuleConfigHandler(Handler):
     """ Module configuration handler abstract class. """
 
     def get_config(self, request):
-        """ Return template/context. """
+        """ Return rendered config. """
         raise NotImplementedError
 
 
@@ -32,8 +32,8 @@ class ConfigSectionHandler(FsapiHandler):
             section='configuration',
         )
 
-    def process(self, request):
-        """ Process configuration request key_value handler. """
+    def get_document(self, request):
+        """ Return config document. """
         key_value = request.POST.get('key_value')
         if not key_value:
             raise Http404

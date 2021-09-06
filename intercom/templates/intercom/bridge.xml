@@ -5,11 +5,11 @@
     <context name="{{ context }}">
       <extension name="bridge">
         <condition regex="all">
-          <regex field="destination_number" expression="^{% get_extension caller extension %}$"/>
+          <regex field="destination_number" expression="^{{ dest_number }}$"/>
           <action application="set" data="inherit_codec=true"/>
           <action application="export" data="_nolocal_rtp_secure_media=true"/>
           <!--action application="info"/-->
-          <action application="bridge" data="{% get_dialstring caller action %}"/>
+          <action application="bridge" data="{% get_dialstring caller extension action %}"/>
         </condition>
       </extension>
     </context>

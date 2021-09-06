@@ -16,10 +16,6 @@ class SofiaProfile(models.Model):
         return self.domain
 
 
-class Intercom(SofiaProfile):
-    """ A SofiaProfile for intercom calls. """
-
-
 class Gateway(SofiaProfile):
     """ A SofiaProfile for gateway calls. """
     username = models.CharField(max_length=50)

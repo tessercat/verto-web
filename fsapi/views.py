@@ -29,9 +29,12 @@ class Handler:
     logger = logging.getLogger('django.server')
     admin_logger = logging.getLogger('django.pbx')
 
-    def log_rendered(self, request, template, context):
-        """ Log the template as rendered in the context. """
-        self.logger.info(render(request, template, context).content.decode())
+    def rendered(self, request, template, context, log=False):
+        """ Render the template. """
+        decoded = render(request, template, context).content.decode()
+        if log:
+            self.logger.info(decoded)
+        return decoded
 
     def __str__(self):
         return self.__class__.__name__
@@ -49,15 +52,15 @@ class FsapiHandler(Handler):
 
     def matches(self, request):
         """ Return True if POST data contains all expected keys/values. """
-        for key in self.keys:
+        for key, value in self.keys.items():
             if (
                     key not in request.POST
-                    or self.keys[key] != request.POST[key]):
+                    or value != request.POST[key]):
                 return False
         return True
 
-    def process(self, request):
-        """ Return template/context. """
+    def get_document(self, request):
+        """ Return self.rendered template/context. """
         raise NotImplementedError
 
 
@@ -74,6 +77,5 @@ class FsapiView(View):
         request.custom404 = custom404
         for handler in fsapi_handlers:
             if handler.matches(request):
-                template, context = handler.process(request)
-                return HttpResponse(render(request, template, context))
+                return HttpResponse(handler.get_document(request))
         raise Http404

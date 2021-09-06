@@ -1,27 +1,8 @@
 """ Intercom dialplan app dialplan request handler module. """
-from uuid import UUID
 from django.http import Http404
 from django.shortcuts import get_object_or_404
 from dialplan.fsapi import DialplanHandler
-from intercom.apps import intercom_settings
-from intercom.models import Extension, Line, InboundTransfer
-from verto.models import Client
-
-
-def outbound_dialstring(bridge_number, cid_name, cid_number):
-    """ Return a dialstring that bridges to gateways in priority order. """
-    dialstrings = []
-    dialstring = '[%s,%s]sofia/gateway/%s/%s'
-    for gateway in intercom_settings['gateways']:
-        dialstrings.append(
-            dialstring % (
-                'origination_caller_id_name=%s' % cid_name,
-                'origination_caller_id_number=%s' % cid_number,
-                gateway.domain,
-                bridge_number
-            )
-        )
-    return '|'.join(dialstrings)
+from intercom.models import Extension, DidExtension, Line, get_e164
 
 
 class LineCallHandler(DialplanHandler):
@@ -32,102 +13,78 @@ class LineCallHandler(DialplanHandler):
         """ Return Line Extension/Matcher template/context. """
 
         # Get the dialed number.
-        dialed_number = request.POST.get('Caller-Destination-Number')
-        if not dialed_number:
+        dest_number = request.POST.get('Caller-Destination-Number')
+        if not dest_number:
             raise Http404
 
         # Get the calling Line.
         username = request.POST.get('variable_user_name')
         if not username:
             raise Http404
-        line = get_object_or_404(Line, username=username)
+        caller = get_object_or_404(Line, username=username)
 
         # Try Extensions.
         try:
+
+            # Extension.
             extension = Extension.objects.get(
                 intercom__domain=context,
-                extension_number=dialed_number
+                extension_number=dest_number
             )
             action = extension.get_action()
             if not action:
                 raise Http404
             template = action.template
-            template_context = {
+            context_data = {
                 'context': context,
-                'caller': line,
+                'dest_number': extension.extension_number,
+                'caller': caller,
                 'extension': extension,
                 'action': action,
             }
-            self.log_rendered(request, template, template_context)
-            return template, template_context
+            return self.rendered(request, template, context_data)
         except Extension.DoesNotExist:
             pass
 
-        # Try InboundTransfers.
-        try:
-            transfer = InboundTransfer.objects.get(
-                phone_number=dialed_number,
-            )
-            template = transfer.template
-            template_context = {'transfer': transfer}
-            self.log_rendered(request, template, template_context)
-            return template, template_context
-        except InboundTransfer.DoesNotExist:
-            pass
+        # Try DidExtensions and OutboundExtensions.
+        full_number = get_e164(dest_number)
+        if not full_number:
+            raise Http404
+        did_extensions = DidExtension.objects.all()
+        for outbound_ext in caller.outbound_extensions.all():
+            if outbound_ext.matches(full_number):
 
-        # Try OutboundExtensions.
-        for extension in line.outbound_extensions.all():
-            bridge_number = extension.matches(dialed_number)
-            if bridge_number:
-                template = extension.template
-                template_context = {
+                # Route to another Intercom via DidExtension.
+                for did_extension in did_extensions:
+                    if did_extension.did_number == full_number:
+                        extension = did_extension.extension
+                        if not extension:
+                            raise Http404
+                        action = extension.get_action()
+                        if not action:
+                            raise Http404
+                        template = action.template
+                        context_data = {
+                            'context': context,
+                            'dest_number': extension.extension_number,
+                            'caller': caller,
+                            'extension': extension,
+                            'action': action,
+                        }
+                        return self.rendered(request, template, context_data)
+
+                # Route via Gateways.
+                template = outbound_ext.template
+                context_data = {
                     'context': context,
-                    'caller': line,
-                    'extension': extension,
-                    'bridge_number': bridge_number
+                    'dest_number': dest_number,
+                    'caller': caller,
+                    'gateway': outbound_ext.gateway
                 }
-                self.log_rendered(request, template, template_context)
-                return template, template_context
+                return self.rendered(request, template, context_data, True)
 
-        # No Extension, no InboundTransfer and no OutboundExtension.
+        # No Extension, no DidExtension, no OutboundExtension.
         raise Http404
-
-
-class ClientCallHandler(DialplanHandler):
-    """ Client dialplan request handler. """
-
-    @staticmethod
-    def get_client(request):
-        """ Return the calling Client. """
-        client_id = request.POST.get('variable_user_name')
-        if not client_id:
-            raise Http404
-        try:
-            UUID(client_id, version=4)
-        except (ValueError) as err:
-            raise Http404 from err
-        return get_object_or_404(Client, client_id=client_id)
-
-    # Handle 404 with an annotation.
-    def get_dialplan(self, request, context):
-        """ Return Client Extension template/context. """
-        # pylint: disable=unused-argument
-        client = self.get_client(request)
-        if not hasattr(client.channel, 'extension'):
-            raise Http404
-        extension = client.channel.extension
-        action = extension.get_action()
-        if not action:
-            raise Http404
-        template = action.template
-        template_context = {
-            'context': context,
-            'caller': client,
-            'extension': extension,
-            'action': action,
-        }
-        self.log_rendered(request, template, template_context)
-        return template, template_context
 
 
 class InboundCallHandler(DialplanHandler):
@@ -136,17 +93,37 @@ class InboundCallHandler(DialplanHandler):
     # Handle 404 with an annotation.
     def get_dialplan(self, request, context):
         """ Return template/context. """
-        did_number = request.POST.get('Caller-Destination-Number')
-        if not did_number:
+
+        # Called number is the Gateway's registration user.
+        dest_number = request.POST.get('Caller-Destination-Number')
+        if not dest_number:
             raise Http404
-        try:
-            transfer = InboundTransfer.objects.get(phone_number=did_number)
-        except InboundTransfer.DoesNotExist:
-            pass  # Write an error log / admin email.
-        template = transfer.template
-        template_context = {
-            'did_number': did_number,
-            'transfer': transfer
+        # Check that dest number matches gateway?
+
+        # Caller ID
+        caller = {
+            'name': request.POST.get('Caller-Caller-ID-Name'),
+            'number': request.POST.get('Caller-Caller-ID-Number')
         }
-        self.log_rendered(request, template, template_context)
-        return template, template_context
+
+        # SIP to user is the full number.
+        did_number = request.POST.get('variable_sip_to_user')
+        try:
+            did_extension = DidExtension.objects.get(did_number=did_number)
+        except DidExtension.DoesNotExist:
+            pass  # Write an error log / admin email.
+        extension = did_extension.extension
+        action = extension.get_action()
+        if not action:
+            raise Http404
+
+        # Action extension.
+        template = action.template
+        context_data = {
+            'context': context,
+            'dest_number': dest_number,
+            'caller': caller,
+            'extension': extension,
+            'action': action,
+        }
+        return self.rendered(request, template, context_data)

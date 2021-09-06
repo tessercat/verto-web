@@ -3,11 +3,40 @@ from django.conf import settings
 from django.contrib import admin
 from django.utils.html import format_html
 from intercom.models import (
-    Extension, OutboundExtension,
-    Bridge, Line,
-    OutboundCallerId,
-    OutsideLine, InboundTransfer
+    OutboundCallerId, Intercom,
+    Extension, DidExtension,
+    Bridge, OutboundExtension,
+    Line, OutsideLine
 )
+
+
+@admin.register(OutboundCallerId)
+class OutboundCallerIdAdmin(admin.ModelAdmin):
+    """ OutboundCallerId model admin tweaks. """
+    list_display = ('name', 'phone_number')
+
+
+@admin.register(Intercom)
+class IntercomAdmin(admin.ModelAdmin):
+    """ Intercom model admin tweaks. """
+
+    def uri_repr(self, obj):
+        """ Return profile SIPS URI. """
+        # pylint: disable=no-self-use
+        return f'sips:{settings.PBX_HOSTNAME}:{obj.port}'
+
+    uri_repr.short_description = 'URI'
+    list_display = ('domain', 'uri_repr', 'default_outbound_caller_id')
+    ordering = ('pk',)
+    readonly_fields = ('port', 'domain', 'uri_repr')
+
+    def has_add_permission(self, request):
+        """ Disable add. """
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        """ Disable delete. """
+        return False
 
 
 @admin.register(Extension)
@@ -22,36 +51,20 @@ class ExtensionAdmin(admin.ModelAdmin):
             return '%s %s' % (obj.get_action().__class__.__name__, action.name)
         return None
 
-    def channel_link(self, obj):
-        """ Return a link to the channel. """
-        # pylint: disable=no-self-use
-        if obj.channel:
-            return format_html(
-                '<a href="https://%s/%s">%s</a>' % (
-                    settings.PBX_HOSTNAME,
-                    obj.channel.channel_id,
-                    obj.channel
-                )
-            )
-        return None
-
     action_repr.short_description = 'Action'
-    channel_link.short_description = 'Web'
 
     exclude = ('channel',)
     list_display = (
         'extension_number',
         'intercom',
-        'channel_link',
-        'public',
         'action_repr'
     )
 
 
-@admin.register(OutboundExtension)
-class OutboundExtensionAdmin(admin.ModelAdmin):
-    """ OutboundExtension model admin tweaks. """
-    list_display = ('name', 'expression', 'default_caller_id')
+@admin.register(DidExtension)
+class DidExtensionAdmin(admin.ModelAdmin):
+    """ DidExtension model admin tweaks. """
+    list_display = ('did_number', 'extension')
 
 
 @admin.register(Bridge)
@@ -83,6 +96,12 @@ class BridgeAdmin(admin.ModelAdmin):
     list_display = ('name', 'extension', 'lines_link', 'outside_lines_link')
 
 
+@admin.register(OutboundExtension)
+class OutboundExtensionAdmin(admin.ModelAdmin):
+    """ OutboundExtension model admin tweaks. """
+    list_display = ('name', 'expression', 'gateway')
+
+
 @admin.register(Line)
 class LineAdmin(admin.ModelAdmin):
     """ Line model admin tweaks. """
@@ -108,17 +127,15 @@ class LineAdmin(admin.ModelAdmin):
 
     exclude = ('registered',)
     list_display = (
-        'name', 'intercom', 'bridges_count',
-        'outbound_count', 'outbound_caller_id',
+        'name',
+        'intercom',
+        'extension',
+        'bridges_count',
+        'outbound_count',
+        'outbound_caller_id',
         'registered'
     )
     search_fields = ['bridges__pk__exact']
-
-
-@admin.register(OutboundCallerId)
-class OutboundCallerIdAdmin(admin.ModelAdmin):
-    """ OutboundCallerId model admin tweaks. """
-    list_display = ('name', 'phone_number')
 
 
 @admin.register(OutsideLine)
@@ -135,14 +152,9 @@ class OutsideLineAdmin(admin.ModelAdmin):
 
     bridges_count.short_description = 'Bridges'
     list_display = (
-        'note', 'phone_number',
+        'note',
+        'phone_number',
         'bridges_count',
-        'default_caller_id'
+        'gateway',
     )
     search_fields = ['bridges__pk__exact']
-
-
-@admin.register(InboundTransfer)
-class InboundTransferAdmin(admin.ModelAdmin):
-    """ InboundTransfer model admin tweaks. """
-    list_display = ('phone_number', 'transfer_extension')

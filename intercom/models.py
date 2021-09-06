@@ -1,15 +1,55 @@
 """ Intercom app models module. """
 import re
 from django.db import models
-from django.db.models import signals
-from django.dispatch import receiver
 from intercom.apps import intercom_settings
-from sofia.models import Intercom
-from verto.models import Channel
+from sofia.models import SofiaProfile, Gateway
+
+
+def get_e164(number):
+    """ Return the full E.164 phone number or None. """
+    if re.fullmatch(r'\+1\d{10}', number):
+        return number
+    if re.fullmatch(r'1\d{10}', number):
+        return '+%s' % number
+    if re.fullmatch(r'\d{10}', number):
+        return '+1%s' % number
+    return None
+
+
+class OutboundCallerId(models.Model):
+    """ An ITSP-verified calling name/number to send out Gateways. """
+
+    name = models.CharField(
+        max_length=50
+    )
+    phone_number = models.CharField(
+        max_length=50
+    )
+
+    def __str__(self):
+        return f'{self.name} {self.phone_number}'
+
+
+class Intercom(SofiaProfile):
+    """ A SofiaProfile for intercom calls.
+
+    Calls through Gateways present OutboundCallerId for outbound calls unless
+    via OutboundExtensions and overridden by a Line. """
+
+    default_outbound_caller_id = models.ForeignKey(
+        OutboundCallerId,
+        blank=True,
+        null=True,
+        on_delete=models.SET_NULL
+    )
 
 
 class Extension(models.Model):
-    """ A numbered dialplan Action and optional verto Channel. """
+    """ An Intercom's numbered dialplan extension.
+
+    Action objects of various types reference Extensions. The get_action
+    method returns the Action object that refrences a particular Extension
+    object, if any. """
 
     class Meta:
         constraints = [
@@ -35,82 +75,44 @@ class Extension(models.Model):
         Intercom,
         on_delete=models.CASCADE
     )
-    web_enabled = models.BooleanField(default=False)
-    public = models.BooleanField(default=False)
-    channel = models.OneToOneField(
-        Channel,
-        blank=True,
-        null=True,
-        on_delete=models.CASCADE,
-    )
+    voicemail = models.BooleanField(default=False)
 
     def __str__(self):
         return f'{self.extension_number} ({self.intercom})'
 
 
-@receiver(signals.post_save, sender=Extension)
-def post_save_handler(sender, instance, created, **kwargs):
-    """ Add/delete channel on instance save. """
-    # pylint: disable=unused-argument
-    if instance.channel and not instance.web_enabled:
-        instance.channel.delete()
-    elif instance.web_enabled and not instance.channel:
-        instance.channel = Channel.objects.create()
-        instance.save()
+class DidExtension(models.Model):
+    """ A DID number and an Extension to call when the dialplan receives a
+    call to the DID number through a Gateway. """
 
+    class Meta:
+        verbose_name = 'DID extension'
+        verbose_name_plural = 'DID extensions'
 
-@receiver(signals.post_delete, sender=Extension)
-def post_delete_handler(sender, instance, **kwargs):
-    """ Delete channel on instance delete. """
-    # pylint: disable=unused-argument
-    if instance.channel:
-        instance.channel.delete()
-
-
-class OutboundCallerId(models.Model):
-    """ An outbound calling name/number. """
-    name = models.CharField(
-        max_length=50
+    did_number = models.CharField(
+        unique=True,
+        max_length=50,
     )
-    phone_number = models.CharField(
-        max_length=50
+    extension = models.ForeignKey(
+        Extension,
+        blank=True,
+        null=True,
+        on_delete=models.SET_NULL
     )
 
     def __str__(self):
-        return f'{self.name} {self.phone_number}'
-
-
-class OutboundExtension(models.Model):
-    """ A combined extension/action for Lines to call through Gateways. """
-
-    def matches(self, dialed_number):
-        """ Return the matched phone number or False. """
-        match = re.fullmatch(self.expression, dialed_number)
-        if match:
-            groups = match.groups()
-            if groups:
-                return groups[0]
-            return match.string
-        return False
-
-    template = 'intercom/outbound.xml'
-
-    name = models.CharField(max_length=50)
-    expression = models.CharField(max_length=50)
-    default_caller_id = models.ForeignKey(
-        OutboundCallerId,
-        on_delete=models.CASCADE
-    )
-
-    def __str__(self):
-        return self.name
+        return f'{self.did_number} {self.extension}'
 
 
 class Action(models.Model):
-    """ A concrete named Extension dialplan action. Meant to be subclassed.
+    """ A concrete named Extension dialplan action.
+
+    Meant to be subclassed.
+
     The intercom.apps module enumerates subclasses on app ready, and Extension
     objects provide a get_action method so that dialplan handlers can retrieve
     and process the subclassed action object. """
+
     template = None
 
     name = models.CharField(max_length=50)
@@ -125,18 +127,66 @@ class Action(models.Model):
 
 class Bridge(Action):
     """ An Action to call the Lines and OutsideLines that reference it. """
-    template = 'intercom/bridge.xml'
 
     class Meta:
         verbose_name = 'Line bridge'
         verbose_name_plural = 'Line bridges'
 
+    template = 'intercom/bridge.xml'
+
+
+class OutboundExtension(models.Model):
+    """ A combined regular expression and dialplan action.
+
+    Lines call external numbers directly via OutboundExtensions.
+
+    The dialplan routes calls to the Gateway, if configured, or to common
+    Gateways if not. No failover if configured.
+
+    The dialplan sends the calling Line's OutboundCallerId, if configured,
+    or the Intercom's if not. """
+
+    def matches(self, full_number):
+        """ Return True on full-number match. """
+        if re.fullmatch(self.expression, full_number):
+            return True
+        return False
+
+    template = 'intercom/outbound.xml'
+
+    name = models.CharField(max_length=50)
+    expression = models.CharField(max_length=50)
+    gateway = models.ForeignKey(
+        Gateway,
+        blank=True,
+        null=True,
+        on_delete=models.SET_NULL
+    )
+
+    def __str__(self):
+        return self.name
+
 
 class Line(models.Model):
-    """ A unique username/password registration for the host domain. Lines are
-    able to call any of their intercom's Extensions. Lines call extensions of
-    other intercoms via InboundTransfers, and they call external numbers via
-    OutboundExtensions. Lines receive calls when their Bridges are called. """
+    """ A unique username/password registration for the host domain.
+
+    Lines can call any of the Intercom's Extensions.
+
+    Lines receive calls when any of the Bridges receive calls.
+
+    Lines call through Gateways via OutboundExtensions, if configured.
+
+    The Line name is used as caller ID name when calling other Intercom
+    Extensions, and the Extension number is caller ID number.
+
+    Eventually, add a Voicemail action. When calling a Voicemail action
+    Extension, the Line automatically manages its Extension's voicemail.
+
+    When dialing out via OutboundExtensions, the dialplan sends the
+    OutboundCallerID, if configured, or the Intercom's default if not.
+
+    Lines can also call through Gateways by calling a Bridge with
+    OutsideLines, but the dialplan ignores the OutboundCallerId. """
 
     class Meta:
         verbose_name = 'Intercom line'
@@ -152,6 +202,12 @@ class Line(models.Model):
         Intercom,
         on_delete=models.CASCADE
     )
+    extension = models.ForeignKey(
+        Extension,
+        blank=True,
+        null=True,
+        on_delete=models.SET_NULL
+    )
     bridges = models.ManyToManyField(
         Bridge,
         blank=True,
@@ -164,7 +220,7 @@ class Line(models.Model):
         OutboundCallerId,
         blank=True,
         null=True,
-        on_delete=models.CASCADE
+        on_delete=models.SET_NULL
     )
     registered = models.DateTimeField(
         blank=True,
@@ -176,8 +232,14 @@ class Line(models.Model):
 
 
 class OutsideLine(models.Model):
-    """ An external phone number. Calls to Bridges that reference an
-    OutsideLine call the phone number through a Gateway. """
+    """ An external phone number.
+
+    The dialplan routes calls to the Gateway, if configured, or to common
+    Gateways if not. No failover if configured.
+
+    The dialplan always sends the Intercom's OutboundCallerId and ignores a
+    calling Line's OutboundCallerId. """
+
     note = models.CharField(
         max_length=50,
     )
@@ -185,33 +247,16 @@ class OutsideLine(models.Model):
         unique=True,
         max_length=50,
     )
-    default_caller_id = models.ForeignKey(
-        OutboundCallerId,
-        on_delete=models.CASCADE
-    )
     bridges = models.ManyToManyField(
         Bridge,
         blank=True,
     )
+    gateway = models.ForeignKey(
+        Gateway,
+        blank=True,
+        null=True,
+        on_delete=models.SET_NULL
+    )
 
     def __str__(self):
         return f'{self.note} {self.phone_number}'
-
-
-class InboundTransfer(models.Model):
-    """ A dialplan action to transfer external calls to an Extension. """
-    template = 'intercom/transfer.xml'
-
-    phone_number = models.CharField(
-        unique=True,
-        max_length=50,
-    )
-    transfer_extension = models.ForeignKey(
-        Extension,
-        blank=True,
-        null=True,
-        on_delete=models.CASCADE
-    )
-
-    def __str__(self):
-        return f'{self.phone_number} {self.transfer_extension}'
