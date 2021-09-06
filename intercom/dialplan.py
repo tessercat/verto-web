@@ -2,7 +2,7 @@
 from django.http import Http404
 from django.shortcuts import get_object_or_404
 from dialplan.fsapi import DialplanHandler
-from intercom.models import Extension, DidExtension, Line, get_e164
+from intercom.models import Extension, DidExtension, Gateway, Line, get_e164
 
 
 class LineCallHandler(DialplanHandler):
@@ -94,11 +94,17 @@ class InboundCallHandler(DialplanHandler):
     def get_dialplan(self, request, context):
         """ Return template/context. """
 
-        # Called number is the Gateway's registration user.
+        # Called number is the Gateway's registration username.
         dest_number = request.POST.get('Caller-Destination-Number')
-        if not dest_number:
+        domain = request.POST.get('variable_sip_gateway')
+        if not dest_number or not domain:
             raise Http404
-        # Check that dest number matches gateway?
+        try:
+            gateway = Gateway.objects.get(domain=domain)
+            if gateway.username != dest_number:
+                raise Http404
+        except Gateway.DoesNotExist as err:
+            raise Http404 from err
 
         # Caller ID
         caller = {
