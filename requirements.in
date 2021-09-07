@@ -3,6 +3,7 @@ daphne
 django-prometheus
 httpx
 markdown
+dnspython
 flake8
 pylint
 pylint-django
