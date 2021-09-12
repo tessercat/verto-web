@@ -20,18 +20,22 @@ class Command(BaseCommand):
         current = {}
         answer = dns.resolver.resolve('sip.signalwire.com', 'A')
         for rdata in answer:
-            current[rdata.to_text()] = {'rdata': rdata, 'status': 'current'}
+            current[rdata.to_text()] = {'rdata': rdata, 'status': 'new'}
         for addr in profile['allow_list']:
             if addr in current:
                 current[addr]['status'] = 'exists'
             else:
-                current[addr]['status'] = 'missing'
-                profile['allow_list'].remove(addr)
-                changed = True
+                current[addr] = {
+                    'addr': addr,
+                    'status': 'removed'
+                }
         for addr, data in current.items():
             print(data)
-            if data['status'] == 'current':
+            if data['status'] == 'new':
                 profile['allow_list'].append(addr)
+                changed = True
+            elif data['status'] == 'removed':
+                profile['allow_list'].remove(addr)
                 changed = True
         return changed
 
@@ -43,11 +47,12 @@ class Command(BaseCommand):
         old_profile = config['GATEWAYS'].get('signalwire')
         if old_profile:
             if self.update_profile_addrs(old_profile):
-                test_file = os.path.join(
-                    settings.BASE_DIR, 'var', 'updatesignalwire.py'
+                backup_file = os.path.join(
+                    settings.BASE_DIR, 'var', '~sofia.py'
                 )
-                with open(test_file, 'w') as new_sofia_fd:
-                    new_sofia_fd.write(pformat(config))
+                os.rename(sofia_file, backup_file)
+                with open(sofia_file, 'w') as sofia_fd:
+                    sofia_fd.write(pformat(config))
                 print('SignalWire addresses changed - importgateways')
             else:
                 print('No change')
