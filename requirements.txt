@@ -4,7 +4,7 @@
 #
 #    pip-compile requirements.in
 #
-anyio==3.3.0
+anyio==3.3.1
     # via httpcore
 asgiref==3.4.1
     # via
@@ -119,7 +119,7 @@ sniffio==1.2.0
     #   anyio
     #   httpcore
     #   httpx
-sqlparse==0.4.1
+sqlparse==0.4.2
     # via django
 toml==0.10.2
     # via pylint
